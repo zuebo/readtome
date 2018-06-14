@@ -10,6 +10,7 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
+import android.support.v4.content.FileProvider;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -79,7 +80,11 @@ public class MainActivity extends Activity {
     public void takePicture(View view) {
         Log.i(TAG, "in taking picture !!!!!");
         Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        file = Uri.fromFile(getOutputMediaFile());
+        file = FileProvider.getUriForFile(
+                getApplicationContext(),
+                getApplicationContext()
+                        .getPackageName() + ".provider", getOutputMediaFile());
+
         intent.putExtra(MediaStore.EXTRA_OUTPUT, file);
 
         startActivityForResult(intent, 100);
@@ -130,8 +135,10 @@ public class MainActivity extends Activity {
     }
 
     private static File getOutputMediaFile(){
-        File mediaStorageDir = new File(Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_PICTURES), "CameraDemo");
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        String fileName = "IMG_"+ timeStamp + ".jpg";
+        File mediaStorageDir = new File(Environment.getExternalStorageDirectory(), fileName);
+
 
         if (!mediaStorageDir.exists()){
             if (!mediaStorageDir.mkdirs()){
@@ -139,8 +146,9 @@ public class MainActivity extends Activity {
             }
         }
 
-        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        return new File(mediaStorageDir.getPath() + File.separator +
-                "IMG_"+ timeStamp + ".jpg");
+
+        final String pathName = mediaStorageDir.getPath() + File.separator + fileName;
+        Log.i(TAG, "file path is " + pathName);
+        return new File(pathName);
     }
 }
