@@ -28,12 +28,14 @@ import com.amazonaws.services.s3.AmazonS3Client;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.UUID;
 
 public class MainActivity extends Activity {
     private static final String TAG = "!!!JAMIE1!!!";
     private Button takePictureButton;
     private ImageView imageView;
     private Uri file;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,11 +70,12 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        Log.i(TAG, "activity result, request code is:  " + requestCode + "result code:  " + resultCode);
         if (requestCode == 100) {
             if (resultCode == RESULT_OK) {
                 imageView.setImageURI(file);
                 // upload
-                uploadWithTransferUtility(new File(file.getPath()));
+                uploadWithTransferUtility();
             }
         }
     }
@@ -80,24 +83,28 @@ public class MainActivity extends Activity {
     public void takePicture(View view) {
         Log.i(TAG, "in taking picture !!!!!");
         Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        final File destFile = getOutputMediaFile();
         file = FileProvider.getUriForFile(
-                getApplicationContext(),
-                getApplicationContext()
-                        .getPackageName() + ".provider", getOutputMediaFile());
+                this,
+                getApplicationContext().getPackageName() + ".provider",
+                destFile);
 
         intent.putExtra(MediaStore.EXTRA_OUTPUT, file);
+        Log.i(TAG, "file path in take picture: " + file.getPath());
 
         startActivityForResult(intent, 100);
     }
 
-    public void uploadWithTransferUtility(final File file) {
+    public void uploadWithTransferUtility() {
         TransferUtility transferUtility = TransferUtility.builder()
                 .context(getApplicationContext())
                 .awsConfiguration(AWSMobileClient.getInstance().getConfiguration())
                 .s3Client(new AmazonS3Client(AWSMobileClient.getInstance().getCredentialsProvider()))
                 .build();
-
-        TransferObserver uploadObserver = transferUtility.upload(file.getName(), file);
+        final String fileName = String.format("TEST_%s.jpg", UUID.randomUUID());
+        final File destFile = new File(Environment.getExternalStorageDirectory(), fileName);
+        Util.copy(this, file, destFile);
+        TransferObserver uploadObserver = transferUtility.upload(destFile.getName(), destFile);
 
         // Attach a listener to the observer to get state update and progress notifications
         uploadObserver.setTransferListener(new TransferListener() {
@@ -106,8 +113,8 @@ public class MainActivity extends Activity {
             public void onStateChanged(int id, TransferState state) {
                 if (TransferState.COMPLETED == state) {
                     // Handle a completed upload.
-                    Log.i(TAG, "transfer completed!!! file name: " + file.getName());
-                    file.delete();
+                    Log.i(TAG, "transfer completed!!! file name: " + destFile.getName());
+                    destFile.delete();
                 }
             }
 
@@ -124,7 +131,7 @@ public class MainActivity extends Activity {
             public void onError(int id, Exception ex) {
                 // Handle errors
                 Log.e(TAG, "ERROR!!", ex);
-                file.delete();
+                destFile.delete();
 
             }
 
@@ -147,7 +154,7 @@ public class MainActivity extends Activity {
         }
 
 
-        final String pathName = mediaStorageDir.getPath() + File.separator + fileName;
+        final String pathName = mediaStorageDir.getPath();
         Log.i(TAG, "file path is " + pathName);
         return new File(pathName);
     }
