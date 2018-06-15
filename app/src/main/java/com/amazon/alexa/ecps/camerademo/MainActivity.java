@@ -4,7 +4,9 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
@@ -26,6 +28,7 @@ import com.amazonaws.mobileconnectors.s3.transferutility.TransferUtility;
 import com.amazonaws.services.s3.AmazonS3Client;
 
 import java.io.File;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.UUID;
@@ -34,7 +37,8 @@ public class MainActivity extends Activity {
     private static final String TAG = "!!!JAMIE1!!!";
     private Button takePictureButton;
     private ImageView imageView;
-    private Uri file;
+    private String mCurrentPhotoPath;
+    private Uri fileUri;
 
 
     @Override
@@ -50,12 +54,7 @@ public class MainActivity extends Activity {
             takePictureButton.setEnabled(false);
             ActivityCompat.requestPermissions(this, new String[] { Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE }, 0);
         }
-        AWSMobileClient.getInstance().initialize(this, new AWSStartupHandler() {
-            @Override
-            public void onComplete(AWSStartupResult awsStartupResult) {
-                Log.d(TAG, "AWSMobileClient is instantiated and you are connected to AWS!");
-            }
-        }).execute();
+        AWSMobileClient.getInstance().initialize(this).execute();
     }
 
     @Override
@@ -73,7 +72,7 @@ public class MainActivity extends Activity {
         Log.i(TAG, "activity result, request code is:  " + requestCode + "result code:  " + resultCode);
         if (requestCode == 100) {
             if (resultCode == RESULT_OK) {
-                imageView.setImageURI(file);
+                imageView.setImageURI(fileUri);
                 // upload
                 uploadWithTransferUtility();
             }
@@ -83,16 +82,28 @@ public class MainActivity extends Activity {
     public void takePicture(View view) {
         Log.i(TAG, "in taking picture !!!!!");
         Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        final File destFile = getOutputMediaFile();
-        file = FileProvider.getUriForFile(
-                this,
-                getApplicationContext().getPackageName() + ".provider",
-                destFile);
+        File photoFile = null;
+        try {
+            photoFile = getOutputMediaFile();
+        } catch (IOException e) {
+            Log.e(TAG, "IOException when creating image file.", e);
+        }
+        // Continue only if the File was successfully created
+        if (photoFile != null) {
+            Log.i(TAG, "file was successfully created! invoking camera");
 
-        intent.putExtra(MediaStore.EXTRA_OUTPUT, file);
-        Log.i(TAG, "file path in take picture: " + file.getPath());
+            if (Build.VERSION.SDK_INT < 24) {
+                fileUri = Uri.fromFile(photoFile);
+            } else {
+                fileUri = FileProvider.getUriForFile(this,
+                        getApplicationContext().getPackageName() + ".provider",
+                        photoFile);
+            }
 
-        startActivityForResult(intent, 100);
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, fileUri);
+            startActivityForResult(intent, 100);
+        }
+
     }
 
     public void uploadWithTransferUtility() {
@@ -101,10 +112,8 @@ public class MainActivity extends Activity {
                 .awsConfiguration(AWSMobileClient.getInstance().getConfiguration())
                 .s3Client(new AmazonS3Client(AWSMobileClient.getInstance().getCredentialsProvider()))
                 .build();
-        final String fileName = String.format("TEST_%s.jpg", UUID.randomUUID());
-        final File destFile = new File(Environment.getExternalStorageDirectory(), fileName);
-        Util.copy(this, file, destFile);
-        TransferObserver uploadObserver = transferUtility.upload(destFile.getName(), destFile);
+        final File imgFile = new File(mCurrentPhotoPath);
+        TransferObserver uploadObserver = transferUtility.upload(imgFile.getName(), imgFile);
 
         // Attach a listener to the observer to get state update and progress notifications
         uploadObserver.setTransferListener(new TransferListener() {
@@ -113,8 +122,8 @@ public class MainActivity extends Activity {
             public void onStateChanged(int id, TransferState state) {
                 if (TransferState.COMPLETED == state) {
                     // Handle a completed upload.
-                    Log.i(TAG, "transfer completed!!! file name: " + destFile.getName());
-                    destFile.delete();
+                    Log.i(TAG, "transfer completed!!! file name: " + imgFile.getName());
+                    imgFile.delete();
                 }
             }
 
@@ -131,7 +140,7 @@ public class MainActivity extends Activity {
             public void onError(int id, Exception ex) {
                 // Handle errors
                 Log.e(TAG, "ERROR!!", ex);
-                destFile.delete();
+                imgFile.delete();
 
             }
 
@@ -141,21 +150,17 @@ public class MainActivity extends Activity {
         Log.d(TAG, "Bytes Total: " + uploadObserver.getBytesTotal());
     }
 
-    private static File getOutputMediaFile(){
+    private File getOutputMediaFile() throws IOException {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        String fileName = "IMG_"+ timeStamp + ".jpg";
-        File mediaStorageDir = new File(Environment.getExternalStorageDirectory(), fileName);
-
-
-        if (!mediaStorageDir.exists()){
-            if (!mediaStorageDir.mkdirs()){
-                return null;
-            }
-        }
-
-
-        final String pathName = mediaStorageDir.getPath();
-        Log.i(TAG, "file path is " + pathName);
-        return new File(pathName);
+        String fileName = "IMG_"+ timeStamp + "_";
+        File mediaStorageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+        File image = File.createTempFile(
+                fileName, /* prefix */
+                ".jpg", /* suffix */
+                mediaStorageDir /* directory */
+        );
+        mCurrentPhotoPath = image.getAbsolutePath();
+        Log.i(TAG, "file path is " + mCurrentPhotoPath);
+        return image;
     }
 }
